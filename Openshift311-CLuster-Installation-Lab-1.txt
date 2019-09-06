@@ -1,16 +1,16 @@
-						Deploying OpenShift 3.9  Cluster 
+						Deploying OpenShift 3.11 Cluster 
 						################################
 
 
-infra1structure Setup: 
+Infrastructure Setup: 
 *********************
 
 Hostname			IP Address	CPUs	RAM	HDD			OS		Role
-master.openshift.example.com	192.168.0.50	 2	2 GB	/dev/sda (100 GB) 	CentOS7.X	Master Node
-node1.openshift.example.com	192.168.0.51	 2	2 GB	/dev/sda (100 GB) 	CentOS7.X	Worker Node 
-node2.openshift.example.com	192.168.0.52	 2	2 GB	/dev/sda (100 GB) 	CentOS7.X	Worker Node
-infra1.openshift.example.com	192.168.0.53	 2	2 GB	/dev/sda (100 GB) 	CentOS7.X	infra1 Node
-
+master1.faranda.io		172.31.31.118	 4	4 GB	/dev/sda (25 GB)	CentOS7.x	Master Node
+infra1.faranda.io		172.31.31.120	 2	2 GB	/dev/sda (25 GB)	CentOS7.x	Infra Node
+node1.faranda.io		172.31.31.121	 2	2 GB	/dev/sda (25 GB)	CentOS7.x	Worker Node
+node2.faranda.io		172.31.31.122	 2	2 GB	/dev/sda (25 GB)	CentOS7.x	Worker Node
+node3.faranda.io		172.31.31.123	 2	2 GB	/dev/sda (25 GB)	CentOS7.x	Worker Node
 
 
 			
@@ -18,92 +18,54 @@ infra1.openshift.example.com	192.168.0.53	 2	2 GB	/dev/sda (100 GB) 	CentOS7.X	i
 						# 	Preparing Nodes: 	#
 						#################################
 
-Step 1: Set the hostname:
-*************************
+Step 1: Check the hostnames:
+***************************
 
-[root@master ~]# hostnamectl set-hostname master.openshift.example.com	# For master node
+Check the hostname and dns resolution in all nodes:
 
+~]# hostname
+~]# hostname -f
+~]# cat /etc/resolv.conf 
+~]# dig master1.faranda.io
+~]# dig +short  master1.faranda.io
+~]# dig +short  infra1.faranda.io
+~]# dig +short  node1.faranda.io
+~]# dig +short  node2.faranda.io
+~]# dig +short  node3.faranda.io
 
-Use the above command to set the hostname for other nodes accordingly. 
-
-[root@master ~]# bash 
-
-Step 2: Configure Static IP Address: 
-************************************
-
-[root@master ~]# vim /etc/sysconfig/network-scripts/ifcfg-ens33 
-
-TYPE="Ethernet"
-BOOTPROTO="none"
-IPADDR=192.168.0.50
-NETMASK=255.255.255.0
-GATEWAY=192.168.0.1
-DNS1=192.168.0.1
-DEFROUTE="yes"
-IPV6INIT="no"
-NAME="ens33"
-DEVICE="ens33"
-ONBOOT="yes"
-
-:wq (save and exit) 
-
-The above IP settings for "master" Node, use the same settings for other nodes accordingly. 
-Don't forget to changes the IP Address for nodes.  
-
-Down the Network Connection, reload the configuration and up it again on all nodes. 
-
-~]# nmcli connection down ens33 
-
-~]# nmcli connection reload
-
-~]# nmcli connection up ens33 
+~]# dig +short  console.faranda.io
+~]# dig +short  apps.faranda.io
 
 
-Configure /etc/hosts file for name resolution as following on all nodes: 
 
-~]# vim /etc/hosts
+Step 2: Disable cloud-init functionality in order to prevent futures network misconfigurations [oVirt]
+The issue is described in the following thread:
+https://users.ovirt.narkive.com/z4A3RzT5/ovirt-users-cloud-init-reset-network-configuration-to-default-dhcp-after-reboot-and-regular-run#post4
 
-192.168.0.50		master.openshift.example.com		master
-192.168.0.51		node1.openshift.example.com		node1
-192.168.0.52		node2.openshift.example.com		node2
-192.168.0.53		infra1.openshift.example.com		infra1
-
+~]# /usr/bin/touch /etc/cloud/cloud-init.disabled
 
 
 Step 3: Use the below command to update the System on all nodes: 
 
 ~]# yum update -y
 
-Use the below command to compare the kernel on all nodes: 
-
-~]# echo "Latest Installed Kernel : $(rpm -q kernel --last | head -n 1 | awk '{print $1}')" ; echo "Current Running Kernel  : kernel-$(uname -r)"
-
-If you have different kernel in above command output, then you need to reboot all the system. otherwise jump to Step 4. 
-
 ~]# reboot 
-
 
 Step 4: Once the systems came back UP/ONLINE, Install the following Packages on all nodes:  
 
 ~]# yum install -y wget git  nano net-tools docker-1.13.1 bind-utils iptables-services bridge-utils bash-completion kexec-tools sos psacct openssl-devel httpd-tools NetworkManager python-cryptography python-devel python-passlib java-1.8.0-openjdk-headless "@Development Tools"
 
 
-
 Step 5: Configure Ansible Repository on master Node only. 
 *********************************************************
 
-[root@master ~]# vim /etc/yum.repos.d/ansible.repo
-
+cat > /etc/yum.repos.d/ansible.repo << EOF
 [ansible]
 name = Ansible Repo
 baseurl = https://releases.ansible.com/ansible/rpm/release/epel-7-x86_64/
 enabled = 1
 gpgcheck =  0
-
-
-:wq (save and exit) 
-
-
+EOF
 
 Step 6: Start and Enable NetworkManager and Docker Services on all nodes: 
 *************************************************************************
@@ -116,91 +78,93 @@ Step 6: Start and Enable NetworkManager and Docker Services on all nodes:
 ~]# systemctl start docker && systemctl enable docker && systemctl status docker
 
 
-
 Step 7: Install Ansible Package and Clone Openshift-Ansible Git Repo on Master Machine :
 ****************************************************************************************
 
-
-[root@master ~]# yum -y install ansible-2.6* pyOpenSSL
+[root@master ~]# yum -y install ansible-2.8* pyOpenSSL
 [root@master ~]# git clone https://github.com/openshift/openshift-ansible.git
-[root@master ~]# cd openshift-ansible && git fetch && git checkout release-3.9
+[root@master ~]# cd openshift-ansible && git fetch && git checkout release-3.11
 
 
 Step 8: Generate SSH Keys on Master Node and install it on all nodes: 
 *********************************************************************
 
 [root@master ~]# ssh-keygen -f ~/.ssh/id_rsa -N '' 
-[root@master ~]#  for host in master.example.com node1.openshift.example.com node2.openshift.example.com infra1.openshift.example.com ; do ssh-copy-id -i ~/.ssh/id_rsa.pub $host; done
+[root@master ~]# for host in master1.faranda.io node1.faranda.io node2.faranda.io node3.faranda.io infra1.faranda.io ; do ssh-copy-id -i ~/.ssh/id_rsa.pub $host; done
 
+and test
+
+[root@master1 ~]# for host in master1.faranda.io node1.faranda.io node2.faranda.io node3.faranda.io infra1.faranda.io ; do ssh $host hostname; done
 
 Step 9: Now Create Your Own Inventory file for Ansible as following on master Node:  
 
-[root@master ~]# vim ~/inventory.ini 
+[root@master ~]# vi ~/inventory.ini
 
 [OSEv3:children]
 masters
 nodes
 etcd
 
-
 [masters]
-master.openshift.example.com openshift_ip=192.168.0.50
+master1.faranda.io openshift_ip=172.31.31.118
 
 [etcd]
-master.openshift.example.com openshift_ip=192.168.0.50
+master1.faranda.io openshift_ip=172.31.31.118
 
 [nodes]
-master.openshift.example.com openshift_ip=192.168.0.50 openshift_schedulable=true
-node1.openshift.example.com openshift_ip=192.168.0.51 openshift_schedulable=true openshift_node_labels="{'region': 'primary', 'zone': 'default'}"
-node2.openshift.example.com openshift_ip=192.168.0.52 openshift_schedulable=true openshift_node_labels="{'region': 'primary', 'zone': 'default'}"
-infra1.openshift.example.com openshift_ip=192.168.0.53 openshift_schedulable=true openshift_node_labels="{'region': 'infra', 'zone': 'default'}"
+master1.faranda.io openshift_ip=172.31.31.118 openshift_schedulable=true openshift_node_group_name='node-config-master'
+node1.faranda.io openshift_ip=172.31.31.121 openshift_schedulable=true openshift_node_group_name='node-config-compute'
+node2.faranda.io openshift_ip=172.31.31.122 openshift_schedulable=true openshift_node_group_name='node-config-compute'
+node3.faranda.io openshift_ip=172.31.31.123 openshift_schedulable=true openshift_node_group_name='node-config-compute'
+infra1.faranda.io openshift_ip=172.31.31.120 openshift_schedulable=true openshift_node_group_name='node-config-infra'
 
 [OSEv3:vars]
 debug_level=4
 ansible_ssh_user=root
 openshift_enable_service_catalog=true
 ansible_service_broker_install=true
-
 containerized=false
 os_sdn_network_plugin_name='redhat/openshift-ovs-multitenant'
 openshift_disable_check=disk_availability,docker_storage,memory_availability,docker_image_availability
-
-openshift_node_kubelet_args={'pods-per-core': ['10']}
-
+#openshift_node_kubelet_args={'pods-per-core': ['10']}
+openshift_node_groups=[{'name': 'node-config-master', 'labels': ['node-role.kubernetes.io/master=true']}, {'name': 'node-config-infra', 'labels': ['node-role.kubernetes.io/infra=true']}, {'name': 'node-config-compute', 'labels': ['node-role.kubernetes.io/compute=true'], 'edits': [{ 'key': 'kubeletArguments.pods-per-core','value': ['10']}]}]
 deployment_type=origin
 openshift_deployment_type=origin
 
-openshift_release=v3.9.0
-openshift_pkg_version=-3.9.0
-openshift_image_tag=v3.9.0
-openshift_service_catalog_image_version=v3.9.0
-template_service_broker_image_version=v3.9.0
+openshift_release=v3.11.0
+openshift_pkg_version=-3.11.0
+openshift_image_tag=v3.11.0
+openshift_service_catalog_image_version=v3.11.0
+template_service_broker_image_version=v3.11.0
 osm_use_cockpit=true
 
 # put the router on dedicated infra1 node
 openshift_hosted_router_selector='region=infra'
-openshift_master_default_subdomain=apps.openshift.example.com
-openshift_public_hostname=master.openshift.example.com
+openshift_master_default_subdomain=apps.faranda.io
+openshift_public_hostname=console.faranda.io
 
 # put the image registry on dedicated infra1 node
 openshift_hosted_registry_selector='region=infra'
 
 
-:wq (save and exit) 
-
-
 
 Step 10: Use the below ansible playbook command to check the prerequisites to deply OpenShift Cluster on master Node: 
 
-[root@master ~]# ansible-playbook -i ~/inventory.ini playbooks/prerequisites.yml
+[root@master ~]# ansible-playbook -i ~/inventory.ini openshift-ansible/playbooks/prerequisites.yml
 
 
 Step 11: Once prerequisites completed without any error use the below ansible playbook to Deploy OpenShift Cluster on master Node: 
 
-[root@master ~]# ansible-playbook -i ~/inventory.ini playbooks/deploy_cluster.yml
+[root@master ~]# ansible-playbook -i ~/inventory.ini openshift-ansible/playbooks/deploy_cluster.yml
 
 
 Now you have to wait approx 20-30 Minutes to complete the Installation. 
+
+
+
+
+
+
 
 
 Step 12: Once the Installation is completed, Create a admin user in OpenShift with Password "Pas$$w0rd" from master Node:  
